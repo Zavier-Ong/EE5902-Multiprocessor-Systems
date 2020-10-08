@@ -14,141 +14,99 @@
 #define UP 1
 #define LEFT 2
 #define DIAGONAL 3
+//Define scores
+#define matchScore 5
+#define mismatchScore -3
+#define gapScore -4
 
-void similarityScore(long long int i, long long int j, int* H, int* P, long long int* maxPos);
-int matchMissmatchScore(long long int i, long long int j);
-void backtrack(int* P, long long int maxPos);
-void printMatrix(int* matrix);
-void printPredecessorMatrix(int* matrix);
-void generate(void);
+void similarityScore(long long int i, long long int j, int** scoreMatrix, int** tbMatrix, long long int* maxPosRow, long long int* maxPosCol);
+int matchMismatchScore(long long int i, long long int j);
+void backtrack(int** tbMatrix, long long int maxPosRow, long long int maxPosCol);
+void printMatrix(int** matrix);
+void printPredecessorMatrix(int** matrix);
+void readFiles(char* queryFile, char* subjectFile);
 
-
-/*--------------------------------------------------------------------
- * Global Variables
- */
  //Defines size of strings to be compared
-int m = 100; //Columns - Size of string a
-int n = 100;  //Lines - Size of string b
+int querySize = 0; //Columns - Size of string a
+int subjectSize = 0;  //Lines - Size of string b
 
-//Defines scores
-int matchScore = 5;
-int missmatchScore = -3;
-int gapScore = -4;
 
 //Strings over the Alphabet Sigma
-char* a, * b;
-
-/* End of global variables */
+char* query, * subject;
 
 /*--------------------------------------------------------------------
  * Function:    main
  */
 int main(int argc, char* argv[]) {
+	if (argc != 3) {
+		printf("Please enter in this format: SmithW <query_file_name> <subject_file_name>\n");
+		return 1;
+	}
+	char* queryFile = argv[1];
+	char* subjectFile = argv[2];
+	readFiles(queryFile, subjectFile);
 
-#ifdef DEBUG
-    printf("\nMatrix[%d][%d]\n", n, m);
-#endif
+	//zeroes in the first row and column
+	querySize++;
+	subjectSize++;
 
-    //Allocates a and b
-    a = malloc(m * sizeof(char));
-    b = malloc(n * sizeof(char));
+	//create 2d score matrix and 2d traceback matrix
+	int **scoreMatrix = (int**) calloc(querySize, sizeof(int));
+	int **tbMatrix = (int **) calloc(querySize, sizeof(int));
 
-    //Because now we have zeros
-    m++;
-    n++;
+	for (int row = 0; row < querySize; row++) {
+		scoreMatrix[row] = (int *) calloc(subjectSize, sizeof(int));
+		tbMatrix[row] = (int *) calloc(subjectSize, sizeof(int));
+	}
 
-    //Allocates similarity matrix H
-    int* H;
-    H = calloc(m * n, sizeof(int));
+	long long int maxPositionRow =0;
+	long long int maxPositionCol =0;
 
-    //Allocates predecessor matrix P
-    int* P;
-    P = calloc(m * n, sizeof(int));
+	for (int i=1; i<subjectSize; i++) {
+		for (int j=1; j<querySize; j++) {
+			similarityScore(i, j, scoreMatrix, tbMatrix, &maxPositionRow, &maxPositionCol);
+		}
+	}
+	backtrack(tbMatrix, maxPositionRow, maxPositionCol);
 
+	#ifdef DEBUG
+	printf("\nSimilarity Matrix:\n");
+	printMatrix(scoreMatrix);
 
-    //Gen rand arrays a and b
-    generate();
-    // a[0] =   'C';
-    // a[1] =   'G';
-    // a[2] =   'T';
-    // a[3] =   'G';
-    // a[4] =   'A';
-    // a[5] =   'A';
-    // a[6] =   'T';
-    // a[7] =   'T';
-    // a[8] =   'C';
-    // a[9] =   'A';
-    // a[10] =  'T';
+	printf("\nPredecessor Matrix:\n");
+	printPredecessorMatrix(tbMatrix);
+	#endif
 
-    // b[0] =   'G';
-    // b[1] =   'A';
-    // b[2] =   'C';
-    // b[3] =   'T';
-    // b[4] =   'T';
-    // b[5] =   'A';
-    // b[6] =   'C';
+	//free strings
+	free(query);
+	free(subject);
 
-    //Start position for backtrack
-    long long int maxPos = 0;
-
-    //Calculates the similarity matrix
-    long long int i, j;
-
-    struct timeval start, stop;
-    gettimeofday(&start, NULL);
-
-    for (i = 1; i < n; i++) { //Lines
-        for (j = 1; j < m; j++) { //Columns
-            similarityScore(i, j, H, P, &maxPos);
-        }
-    }
-
-    backtrack(P, maxPos);
-
-    //Gets final time
-    gettimeofday(&stop, NULL);
-    double secs = (double)(stop.tv_usec - start.tv_usec) / 1000000 + (double)(stop.tv_sec - start.tv_sec);
-    printf("\nElapsed time: %f s\n\n", secs);
-
-#ifdef DEBUG
-    printf("\nSimilarity Matrix:\n");
-    printMatrix(H);
-
-    printf("\nPredecessor Matrix:\n");
-    printPredecessorMatrix(P);
-#endif
-
-    //Frees similarity matrixes
-    free(H);
-    free(P);
-
-    //Frees input arrays
-    free(a);
-    free(b);
+	//free matrix
+	free(scoreMatrix);
+	free(tbMatrix);
 
     return 0;
-}  /* End of main */
+}
+
 
 
 /*--------------------------------------------------------------------
  * Function:    SimilarityScore
  * Purpose:     Calculate  the maximum Similarity-Score H(i,j)
  */
-void similarityScore(long long int i, long long int j, int* H, int* P, long long int* maxPos) {
+void similarityScore(long long int i, long long int j, int** scoreMatrix, int** tbMatrix, long long int* maxPosRow, long long int* maxPosCol) {
 
     int up, left, diag;
 
-    //Stores index of element
-    long long int index = m * i + j;
 
     //Get element above
-    up = H[index - m] + gapScore;
+    up = scoreMatrix[i-1][j] + gapScore;
 
     //Get element on the left
-    left = H[index - 1] + gapScore;
+    left = scoreMatrix[i][j-1] + gapScore;
 
     //Get element on the diagonal
-    diag = H[index - m - 1] + matchMissmatchScore(i, j);
+    diag = scoreMatrix[i-1][j-1] + matchMismatchScore(i, j);
 
     //Calculates the maximum
     int max = NONE;
@@ -168,143 +126,136 @@ void similarityScore(long long int i, long long int j, int* H, int* P, long long
      * a=GAATTCA
     */
 
-    if (diag > max) { //same letter NW
+    if (diag > max) {
         max = diag;
         pred = DIAGONAL;
     }
 
-    if (up > max) { //remove letter N
+    if (up > max) {
         max = up;
         pred = UP;
     }
 
-    if (left > max) { //insert letter W
+    if (left > max) {
         max = left;
         pred = LEFT;
     }
     //Inserts the value in the similarity and predecessor matrixes
-    H[index] = max;
-    P[index] = pred;
+    scoreMatrix[i][j] = max;
+    tbMatrix[i][j] = pred;
 
     //Updates maximum score to be used as seed on backtrack
-    if (max > H[*maxPos]) {
-        *maxPos = index;
+    if (max > scoreMatrix[*maxPosRow][*maxPosCol]) {
+        *maxPosRow = i;
+        *maxPosCol = j;
     }
 
-}  /* End of similarityScore */
+}
 
-
-/*--------------------------------------------------------------------
- * Function:    matchMissmatchScore
- * Purpose:     Similarity function on the alphabet for match/missmatch
- */
-int matchMissmatchScore(long long int i, long long int j) {
-    if (a[j - 1] == b[i - 1])
+int matchMismatchScore(long long int i, long long int j) {
+    if (subject[i] == query[j])
         return matchScore;
     else
-        return missmatchScore;
-}  /* End of matchMissmatchScore */
+        return mismatchScore;
+}
 
 /*--------------------------------------------------------------------
  * Function:    backtrack
  * Purpose:     Modify matrix to print, path change from value to PATH
  */
-void backtrack(int* P, long long int maxPos) {
+void backtrack(int** tbMatrix, long long int maxPosRow, long long int maxPosCol) {
     //hold maxPos value
-    long long int predPos;
+    long long int predPosRow;
+    long long int predPosCol;
 
     //backtrack from maxPos to startPos = 0
     do {
-        if (P[maxPos] == DIAGONAL)
-            predPos = maxPos - m - 1;
-        else if (P[maxPos] == UP)
-            predPos = maxPos - m;
-        else if (P[maxPos] == LEFT)
-            predPos = maxPos - 1;
-        P[maxPos] *= PATH;
-        maxPos = predPos;
-    } while (P[maxPos] != NONE);
-}  /* End of backtrack */
+        if (tbMatrix[maxPosRow][maxPosCol] == DIAGONAL) {
+            predPosRow = maxPosRow - 1;
+            predPosCol = maxPosCol - 1;
+        }
+        else if (tbMatrix[maxPosRow][maxPosCol] == UP) {
+            predPosRow = maxPosRow - 1;
+        }
+        else if (tbMatrix[maxPosRow][maxPosCol] == LEFT) {
+            predPosCol = maxPosCol - 1;
+        }
+        tbMatrix[maxPosRow][maxPosCol] *= PATH;
+        maxPosRow = predPosRow;
+        maxPosCol = predPosCol;
+    } while (tbMatrix[maxPosRow][maxPosCol] != NONE);
+}
 
 /*--------------------------------------------------------------------
  * Function:    printMatrix
  * Purpose:     Print Matrix
  */
-void printMatrix(int* matrix) {
+void printMatrix(int** matrix) {
     long long int i, j;
-    for (i = 0; i < n; i++) { //Lines
-        for (j = 0; j < m; j++) {
-            printf("%d\t", matrix[m * i + j]);
+    for (i = 0; i < subjectSize; i++) { //Lines
+        for (j = 0; j < querySize; j++) {
+            printf("%d\t", matrix[i][j]);
         }
         printf("\n");
     }
 
-}  /* End of printMatrix */
+}
 
-/*--------------------------------------------------------------------
- * Function:    printPredecessorMatrix
- * Purpose:     Print predecessor matrix
- */
-void printPredecessorMatrix(int* matrix) {
-    long long int i, j, index;
-    for (i = 0; i < n; i++) { //Lines
-        for (j = 0; j < m; j++) {
-            index = m * i + j;
-            if (matrix[index] < 0) {
-                if (matrix[index] == -UP)
+void printPredecessorMatrix(int** matrix) {
+    long long int i, j;
+    for (i = 0; i < subjectSize; i++) { //Lines
+        for (j = 0; j < querySize; j++) {
+            if (matrix[i][j] < 0) {
+                if (matrix[i][j] == -UP)
                     printf("N  ");
-                else if (matrix[index] == -LEFT)
+                else if (matrix[i][j] == -LEFT)
                     printf("W  ");
-                else if (matrix[index] == -DIAGONAL)
+                else if (matrix[i][j] == -DIAGONAL)
                     printf("NW ");
                 else
-                    printf("- ");
+                    printf("-  ");
             }
             else {
-                if (matrix[index] == UP)
+                if (matrix[i][j] == UP)
                     printf("N  ");
-                else if (matrix[index] == LEFT)
+                else if (matrix[i][j] == LEFT)
                     printf("W  ");
-                else if (matrix[index] == DIAGONAL)
+                else if (matrix[i][j] == DIAGONAL)
                     printf("NW ");
                 else
-                    printf("- ");
+                    printf("-  ");
             }
         }
         printf("\n");
     }
+}
 
-}  /* End of printPredecessorMatrix */
+void readFiles(char* queryFile, char* subjectFile) {
+	FILE* qfp = fopen(queryFile, "r");
+	FILE* sfp = fopen(subjectFile, "r");
 
-/*--------------------------------------------------------------------
- * Function:    generate
- * Purpose:     Generate arrays a and b
- */
-void generate() {
-    //Generates the values of a
-    long long int i;
-    for (i = 0; i < m; i++) {
-        int aux = rand() % 4;
-        if (aux == 0)
-            a[i] = 'A';
-        else if (aux == 2)
-            a[i] = 'C';
-        else if (aux == 3)
-            a[i] = 'G';
-        else
-            a[i] = 'T';
-    }
+	if (qfp) {
+		fseek(qfp, 0, SEEK_END);
+		querySize = ftell(qfp);
+		printf("%d\n", querySize);
+		fseek(qfp, 0, SEEK_SET);
+		query = malloc(querySize);
+		if (query) {
+			fread(query, 1, querySize, qfp);
+		}
+		fclose(qfp);
+	}
 
-    //Generates the values of b
-    for (i = 0; i < n; i++) {
-        int aux = rand() % 4;
-        if (aux == 0)
-            b[i] = 'A';
-        else if (aux == 2)
-            b[i] = 'C';
-        else if (aux == 3)
-            b[i] = 'G';
-        else
-            b[i] = 'T';
-    }
-} /* End of generate */
+	if (sfp) {
+		fseek(sfp, 0, SEEK_END);
+		subjectSize = ftell(sfp);
+		printf("%d\n", subjectSize);
+		fseek(sfp, 0, SEEK_SET);
+		subject = malloc(subjectSize);
+		if (subject) {
+			fread(subject, 1, subjectSize, sfp);
+		}
+		fclose(sfp);
+	}
+}
+
