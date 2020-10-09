@@ -1,13 +1,8 @@
-/***********************************************************************
- * Smith–Waterman algorithm
- * Purpose:     Local alignment of nucleotide or protein sequences
- * Authors:     Daniel Holanda, Hanoch Griner, Taynara Pinheiro
- ***********************************************************************/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <sys/time.h>
+#include <string.h>
 
 #define PATH -1
 #define NONE 0
@@ -19,24 +14,19 @@
 #define mismatchScore -3
 #define gapScore -4
 
-void similarityScore(long long int i, long long int j, int** scoreMatrix, int** tbMatrix, long long int* maxPosRow, long long int* maxPosCol);
-int matchMismatchScore(long long int i, long long int j);
-void backtrack(int** tbMatrix, long long int maxPosRow, long long int maxPosCol);
-void printMatrix(int** matrix);
-void printPredecessorMatrix(int** matrix);
 void readFiles(char* queryFile, char* subjectFile);
+void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix, int* maxPos);
+int matchMismatchScore(int i, int j);
+void backtrack(int* tbMatrix, int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse);
+void printMatrix(int* matrix);
+void printTracebackMatrix(int* tbMatrix);
+void printResults(long int finalScore, double time, char* qrr, char* srr);
 
- //Defines size of strings to be compared
-int querySize = 0; //Columns - Size of string a
-int subjectSize = 0;  //Lines - Size of string b
+int querySize = 0;
+int subjectSize = 0;
 
-
-//Strings over the Alphabet Sigma
 char* query, * subject;
 
-/*--------------------------------------------------------------------
- * Function:    main
- */
 int main(int argc, char* argv[]) {
 	if (argc != 3) {
 		printf("Please enter in this format: SmithW <query_file_name> <subject_file_name>\n");
@@ -46,85 +36,61 @@ int main(int argc, char* argv[]) {
 	char* subjectFile = argv[2];
 	readFiles(queryFile, subjectFile);
 
-	//zeroes in the first row and column
+	//increment to include 0s in the first row and column
 	querySize++;
 	subjectSize++;
 
-	//create 2d score matrix and 2d traceback matrix
-	int **scoreMatrix = (int**) calloc(querySize, sizeof(int));
-	int **tbMatrix = (int **) calloc(querySize, sizeof(int));
+	//allocate flattened score matrix and traceback matrix
+	int *scoreMatrix = calloc(querySize * subjectSize, sizeof(int));
+	int *tbMatrix = calloc(querySize * subjectSize, sizeof(int));
 
-	for (int row = 0; row < querySize; row++) {
-		scoreMatrix[row] = (int *) calloc(subjectSize, sizeof(int));
-		tbMatrix[row] = (int *) calloc(subjectSize, sizeof(int));
-	}
+	//initialize variables
+	long int finalScore = 0;
+	//temporary allocation of string
+	char* queryResultReverse = malloc(querySize);
+	char* subjectResultReverse = malloc(subjectSize);
+	int maxPosition = 0;
 
-	long long int maxPositionRow =0;
-	long long int maxPositionCol =0;
+	//start clock
+	clock_t tic = clock();
 
-	for (int i=1; i<subjectSize; i++) {
-		for (int j=1; j<querySize; j++) {
-			similarityScore(i, j, scoreMatrix, tbMatrix, &maxPositionRow, &maxPositionCol);
+	for (int i=1; i<querySize; i++) {
+		for (int j=1; j<subjectSize; j++) {
+			similarityScore(i, j, scoreMatrix, tbMatrix, &maxPosition);
 		}
 	}
-	backtrack(tbMatrix, maxPositionRow, maxPositionCol);
+	backtrack(tbMatrix, scoreMatrix, maxPosition, &finalScore, queryResultReverse, subjectResultReverse);
+
+	//stop clock
+	clock_t toc = clock();
+	double timeElapsed = (double)(toc-tic)/CLOCKS_PER_SEC;
 
 	#ifdef DEBUG
-	printf("\nSimilarity Matrix:\n");
+	printResults(finalScore, timeElapsed, queryResultReverse, subjectResultReverse);
 	printMatrix(scoreMatrix);
-
-	printf("\nPredecessor Matrix:\n");
-	printPredecessorMatrix(tbMatrix);
+	printTracebackMatrix(tbMatrix);
 	#endif
-
-	//free strings
-	free(query);
-	free(subject);
-
-	//free matrix
-	free(scoreMatrix);
-	free(tbMatrix);
 
     return 0;
 }
 
-
-
-/*--------------------------------------------------------------------
- * Function:    SimilarityScore
- * Purpose:     Calculate  the maximum Similarity-Score H(i,j)
- */
-void similarityScore(long long int i, long long int j, int** scoreMatrix, int** tbMatrix, long long int* maxPosRow, long long int* maxPosCol) {
-
+void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix, int* maxPos) {
     int up, left, diag;
 
+    int index = querySize * i + j;
 
     //Get element above
-    up = scoreMatrix[i-1][j] + gapScore;
+    up = scoreMatrix[index-querySize] + gapScore;
 
     //Get element on the left
-    left = scoreMatrix[i][j-1] + gapScore;
+    left = scoreMatrix[index-1] + gapScore;
 
     //Get element on the diagonal
-    diag = scoreMatrix[i-1][j-1] + matchMismatchScore(i, j);
+    diag = scoreMatrix[index-querySize-1] + matchMismatchScore(i, j);
 
     //Calculates the maximum
     int max = NONE;
     int pred = NONE;
-    /* === Matrix ===
-     *      a[0] ... a[n]
-     * b[0]
-     * ...
-     * b[n]
-     *
-     * generate 'a' from 'b', if 'W' insert e 'N' remove
-     * a=GAATTCA
-     * b=GACTT-A
-     *
-     * generate 'b' from 'a', if 'W' insert e 'N' remove
-     * b=GACTT-A
-     * a=GAATTCA
-    */
 
     if (diag > max) {
         max = diag;
@@ -140,90 +106,108 @@ void similarityScore(long long int i, long long int j, int** scoreMatrix, int** 
         max = left;
         pred = LEFT;
     }
-    //Inserts the value in the similarity and predecessor matrixes
-    scoreMatrix[i][j] = max;
-    tbMatrix[i][j] = pred;
+    //Inserts the value in the similarity and traceback matrixes
+    scoreMatrix[index] = max;
+    tbMatrix[index] = pred;
 
-    //Updates maximum score to be used as seed on backtrack
-    if (max > scoreMatrix[*maxPosRow][*maxPosCol]) {
-        *maxPosRow = i;
-        *maxPosCol = j;
+    //Updates location of max value
+    if (max > scoreMatrix[*maxPos]) {
+        *maxPos = index;
     }
 
 }
 
-int matchMismatchScore(long long int i, long long int j) {
-    if (subject[i] == query[j])
+int matchMismatchScore(int i, int j) {
+	if (subject[i-1] == query[j-1])
         return matchScore;
     else
         return mismatchScore;
 }
 
-/*--------------------------------------------------------------------
- * Function:    backtrack
- * Purpose:     Modify matrix to print, path change from value to PATH
- */
-void backtrack(int** tbMatrix, long long int maxPosRow, long long int maxPosCol) {
-    //hold maxPos value
-    long long int predPosRow;
-    long long int predPosCol;
-
-    //backtrack from maxPos to startPos = 0
+void backtrack(int* tbMatrix, int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse) {
+    int predPos;
+    int resultSize = 0;
+    //backtrack from maxPos until reaches 0
     do {
-        if (tbMatrix[maxPosRow][maxPosCol] == DIAGONAL) {
-            predPosRow = maxPosRow - 1;
-            predPosCol = maxPosCol - 1;
+
+        if (tbMatrix[maxPos] == DIAGONAL) {
+            predPos = maxPos - querySize - 1;
         }
-        else if (tbMatrix[maxPosRow][maxPosCol] == UP) {
-            predPosRow = maxPosRow - 1;
+        else if (tbMatrix[maxPos] == UP) {
+            predPos = maxPos - querySize;
         }
-        else if (tbMatrix[maxPosRow][maxPosCol] == LEFT) {
-            predPosCol = maxPosCol - 1;
+        else if (tbMatrix[maxPos] == LEFT) {
+            predPos = maxPos - 1;
         }
-        tbMatrix[maxPosRow][maxPosCol] *= PATH;
-        maxPosRow = predPosRow;
-        maxPosCol = predPosCol;
-    } while (tbMatrix[maxPosRow][maxPosCol] != NONE);
+        tbMatrix[maxPos] *= PATH;
+
+        //collate results
+//        *finalScore += scoreMatrix[maxPos];
+//        queryResultReverse[resultSize] = query[((maxPos)%querySize)-1];
+//        subjectResultReverse[resultSize++] = subject[(maxPos-1)/querySize];
+
+        maxPos = predPos;
+
+    } while (tbMatrix[maxPos] != NONE);
+    //null terminating the strings
+//    queryResultReverse[resultSize] = '\0';
+//    subjectResultReverse[resultSize] = '\0';
 }
 
-/*--------------------------------------------------------------------
- * Function:    printMatrix
- * Purpose:     Print Matrix
- */
-void printMatrix(int** matrix) {
-    long long int i, j;
-    for (i = 0; i < subjectSize; i++) { //Lines
-        for (j = 0; j < querySize; j++) {
-            printf("%d\t", matrix[i][j]);
+void printResults(long int finalScore, double time, char* qrr, char* srr) {
+	//reverse both strings
+	strrev(qrr);
+	strrev(srr);
+	printf("\n======================================\n");
+	printf("PROGRAM FINISHED\n");
+//	printf("1) FINAL SCORE: %ld\n", finalScore);
+//	printf("2) ALIGNMENT STRING SIZE: %d\n", strlen(qrr));
+//	printf("3) ALIGNMENT STRING:\n");
+//	printf("\t%s\n", qrr);
+//	printf("\t");
+//	for (int i=0; i<strlen(qrr); i++) {
+//		if (qrr[i] == srr[i]) {
+//			printf("*");
+//		}
+//		else {
+//			printf("|");
+//		}
+//	}
+//	printf("\n\t%s\n", srr);
+	printf("4) TIME ELAPSED: %f\n", time);
+  	printf("======================================\n");
+}
+
+void printMatrix(int* matrix) {
+    int i, j;
+	printf("\nSimilarity Matrix:\n");
+    for (i = 0; i < querySize; i++) { //Lines
+        for (j = 0; j < subjectSize; j++) {
+            printf("%d\t", matrix[subjectSize * i +j ]);
         }
         printf("\n");
     }
 
 }
 
-void printPredecessorMatrix(int** matrix) {
-    long long int i, j;
-    for (i = 0; i < subjectSize; i++) { //Lines
-        for (j = 0; j < querySize; j++) {
-            if (matrix[i][j] < 0) {
-                if (matrix[i][j] == -UP)
+void printTracebackMatrix(int* tbMatrix) {
+    int i, j, index;
+	printf("\nTraceback Matrix:\n");
+    for (i = 0; i < querySize; i++) { //Lines
+        for (j = 0; j < subjectSize; j++) {
+        	index = subjectSize * i + j;
+            if (tbMatrix[index] < 0) {
+                if (tbMatrix[index] == -UP)
                     printf("N  ");
-                else if (matrix[i][j] == -LEFT)
+                else if (tbMatrix[index] == -LEFT)
                     printf("W  ");
-                else if (matrix[i][j] == -DIAGONAL)
+                else if (tbMatrix[index] == -DIAGONAL)
                     printf("NW ");
                 else
                     printf("-  ");
             }
             else {
-                if (matrix[i][j] == UP)
-                    printf("N  ");
-                else if (matrix[i][j] == LEFT)
-                    printf("W  ");
-                else if (matrix[i][j] == DIAGONAL)
-                    printf("NW ");
-                else
-                    printf("-  ");
+                printf("-  ");
             }
         }
         printf("\n");
@@ -237,7 +221,6 @@ void readFiles(char* queryFile, char* subjectFile) {
 	if (qfp) {
 		fseek(qfp, 0, SEEK_END);
 		querySize = ftell(qfp);
-		printf("%d\n", querySize);
 		fseek(qfp, 0, SEEK_SET);
 		query = malloc(querySize);
 		if (query) {
@@ -249,7 +232,6 @@ void readFiles(char* queryFile, char* subjectFile) {
 	if (sfp) {
 		fseek(sfp, 0, SEEK_END);
 		subjectSize = ftell(sfp);
-		printf("%d\n", subjectSize);
 		fseek(sfp, 0, SEEK_SET);
 		subject = malloc(subjectSize);
 		if (subject) {
