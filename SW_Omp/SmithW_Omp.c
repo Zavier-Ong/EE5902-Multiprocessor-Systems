@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <sys/time.h>
 #include <string.h>
 #include <omp.h>
 
@@ -15,16 +14,14 @@
 #define mismatchScore -2
 #define gapScore -5
 
-#define min(x, y) (((x) < (y)) ? (x) : (y))
-#define max(a,b) ((a) > (b) ? a : b)
-
-
 void readFiles(char* queryFile, char* subjectFile);
 void similarityScore(int i, int j, int* scoreMatrix, int* maxPos);
-int matchMismatchScore(int i, int j);
 void backtrack(int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse);
 void printMatrix(int* matrix);
 void printResults(long int finalScore, double time, char* qrr, char* srr);
+int matchMismatchScore(int i, int j);
+int min(int x, int y);
+int max(int x, int y);
 
 int querySize = 0;
 int subjectSize = 0;
@@ -101,17 +98,14 @@ void similarityScore(int i, int j, int* scoreMatrix, int* maxPos) {
 
 	if (diag > max) {
 		max = diag;
-		pred = DIAGONAL;
 	}
 
 	if (up > max) {
 		max = up;
-		pred = UP;
 	}
 
 	if (left > max) {
 		max = left;
-		pred = LEFT;
 	}
 	//Inserts the value in the similarity and traceback matrixes
 	scoreMatrix[index] = max;
@@ -164,6 +158,20 @@ void backtrack(int* scoreMatrix, int maxPos, long int* finalScore, char* queryRe
     //null terminating the strings
     queryResultReverse[resultSize] = '\0';
     subjectResultReverse[resultSize] = '\0';
+}
+
+int min(int x, int y) {
+	if ( x < y )
+		return x;
+	else
+		return y;
+}
+
+int max(int x, int y) {
+	if ( x > y)
+		return x;
+	else
+		return y;
 }
 
 void printResults(long int finalScore, double time, char* qrr, char* srr) {
