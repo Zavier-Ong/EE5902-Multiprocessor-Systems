@@ -3,6 +3,7 @@
 #include <math.h>
 #include <sys/time.h>
 #include <string.h>
+#include <omp.h>
 
 #define PATH -1
 #define NONE 0
@@ -10,9 +11,9 @@
 #define LEFT 2
 #define DIAGONAL 3
 //Define scores
-#define matchScore 5
-#define mismatchScore -3
-#define gapScore -4
+#define matchScore 2
+#define mismatchScore -2
+#define gapScore -5
 
 void readFiles(char* queryFile, char* subjectFile);
 void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix, int* maxPos);
@@ -47,12 +48,12 @@ int main(int argc, char* argv[]) {
 	//initialize variables
 	long int finalScore = 0;
 	//temporary allocation of string
-	char* queryResultReverse = malloc(querySize);
-	char* subjectResultReverse = malloc(subjectSize);
+	char* queryResultReverse = malloc(querySize*querySize);
+	char* subjectResultReverse = malloc(subjectSize*subjectSize);
 	int maxPosition = 0;
 
 	//start clock
-	clock_t tic = clock();
+	double initialTime = omp_get_wtime();
 
 	for (int i=1; i<querySize; i++) {
 		for (int j=1; j<subjectSize; j++) {
@@ -62,13 +63,13 @@ int main(int argc, char* argv[]) {
 	backtrack(tbMatrix, scoreMatrix, maxPosition, &finalScore, queryResultReverse, subjectResultReverse);
 
 	//stop clock
-	clock_t toc = clock();
-	double timeElapsed = (double)(toc-tic)/CLOCKS_PER_SEC;
+	double finalTime = omp_get_wtime();
+	double timeElapsed = finalTime - initialTime;
+	printResults(finalScore, timeElapsed, queryResultReverse, subjectResultReverse);
 
 	#ifdef DEBUG
-	printResults(finalScore, timeElapsed, queryResultReverse, subjectResultReverse);
-	printMatrix(scoreMatrix);
-	printTracebackMatrix(tbMatrix);
+	//printMatrix(scoreMatrix);
+	//printTracebackMatrix(tbMatrix);
 	#endif
 
     return 0;
@@ -127,31 +128,37 @@ int matchMismatchScore(int i, int j) {
 void backtrack(int* tbMatrix, int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse) {
     int predPos;
     int resultSize = 0;
+    //record highest score
+    *finalScore = scoreMatrix[maxPos];
     //backtrack from maxPos until reaches 0
     do {
 
         if (tbMatrix[maxPos] == DIAGONAL) {
             predPos = maxPos - querySize - 1;
+            //record character
+            queryResultReverse[resultSize] = query[(maxPos%querySize)-1];
+            subjectResultReverse[resultSize++] = subject[((maxPos-1)/querySize)-1];
         }
         else if (tbMatrix[maxPos] == UP) {
             predPos = maxPos - querySize;
+            //insert - at subject string
+            queryResultReverse[resultSize] = query[(maxPos%querySize)-1];
+            subjectResultReverse[resultSize++] = '-';
         }
         else if (tbMatrix[maxPos] == LEFT) {
             predPos = maxPos - 1;
+            //insert - at query string
+            queryResultReverse[resultSize] = '-';
+            subjectResultReverse[resultSize++] = subject[((maxPos-1)/querySize)-1];
         }
         tbMatrix[maxPos] *= PATH;
-
-        //collate results
-//        *finalScore += scoreMatrix[maxPos];
-//        queryResultReverse[resultSize] = query[((maxPos)%querySize)-1];
-//        subjectResultReverse[resultSize++] = subject[(maxPos-1)/querySize];
 
         maxPos = predPos;
 
     } while (tbMatrix[maxPos] != NONE);
     //null terminating the strings
-//    queryResultReverse[resultSize] = '\0';
-//    subjectResultReverse[resultSize] = '\0';
+    queryResultReverse[resultSize] = '\0';
+    subjectResultReverse[resultSize] = '\0';
 }
 
 void printResults(long int finalScore, double time, char* qrr, char* srr) {
@@ -160,21 +167,25 @@ void printResults(long int finalScore, double time, char* qrr, char* srr) {
 	strrev(srr);
 	printf("\n======================================\n");
 	printf("PROGRAM FINISHED\n");
-//	printf("1) FINAL SCORE: %ld\n", finalScore);
-//	printf("2) ALIGNMENT STRING SIZE: %d\n", strlen(qrr));
-//	printf("3) ALIGNMENT STRING:\n");
-//	printf("\t%s\n", qrr);
-//	printf("\t");
-//	for (int i=0; i<strlen(qrr); i++) {
-//		if (qrr[i] == srr[i]) {
-//			printf("*");
-//		}
-//		else {
-//			printf("|");
-//		}
-//	}
-//	printf("\n\t%s\n", srr);
-	printf("4) TIME ELAPSED: %f\n", time);
+	printf("Analyzed query and subject string of %d\n", querySize-1);
+	printf("1) FINAL SCORE: %ld\n", finalScore);
+	printf("2) ALIGNMENT STRING SIZE: %d\n", strlen(qrr));
+	printf("3) ALIGNMENT STRING:\n");
+	printf("\t%s\n", qrr);
+	printf("\t");
+	for (int i=0; i<strlen(qrr); i++) {
+		if ((qrr[i] == '-') | (srr[i] == '-')) {
+			printf(" ");
+		}
+		else if (qrr[i] == srr[i]) {
+			printf("|");
+		}
+		else {
+			printf("*");
+		}
+	}
+	printf("\n\t%s\n", srr);
+	printf("4) TIME ELAPSED: %fs\n", time);
   	printf("======================================\n");
 }
 
