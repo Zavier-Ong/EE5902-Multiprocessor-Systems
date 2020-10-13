@@ -4,11 +4,6 @@
 #include <string.h>
 #include <omp.h>
 
-#define PATH -1
-#define NONE 0
-#define UP 1
-#define LEFT 2
-#define DIAGONAL 3
 //Define scores
 #define matchScore 2
 #define mismatchScore -2
@@ -39,7 +34,7 @@ int main(int argc, char* argv[]) {
 	querySize++;
 	subjectSize++;
 
-	//allocate flattened score matrix and traceback matrix
+	//allocate flattened score matrix
 	int *scoreMatrix = calloc(querySize * subjectSize, sizeof(int));
 
 	//initialize variables
@@ -87,7 +82,7 @@ void similarityScore(int i, int j, int* scoreMatrix, int* maxPos) {
     diag = scoreMatrix[index-querySize-1] + matchMismatchScore(i, j);
 
     //Calculates the maximum
-    int max = NONE;
+    int max = 0;
 
     if (diag > max) {
         max = diag;
