@@ -66,11 +66,11 @@ int main(int argc, char* argv[]) {
 	#pragma omp parallel num_threads(thread_count) default(none) shared(scoreMatrix, tbMatrix, subjectSize, querySize, numThreads, nDiag) private(nEle, si, sj, ai, aj)
 	{
 		numThreads = omp_get_num_threads();
-		for (int i=1; i <= nDiag; ++i) {
+		for (int i=1; i <= nDiag; i++) {
 			nEle = nElement(i);
 			calcFirstDiagElement(&i, &si, &sj);
 			#pragma omp for
-			for (int j=1; j<= nEle; ++j) {
+			for (int j=1; j<= nEle; j++) {
 				ai = si- j + 1;
 				aj = sj + j -1;
 				similarityScore(ai, aj, scoreMatrix, tbMatrix);
@@ -83,8 +83,8 @@ int main(int argc, char* argv[]) {
 	double finalTime = omp_get_wtime();
 	double timeElapsed = finalTime-initialTime;
 	printResults(finalScore, timeElapsed, numThreads, queryResultReverse, subjectResultReverse);
-	//printMatrix(scoreMatrix);
-	//printTracebackMatrix(tbMatrix);
+	printMatrix(scoreMatrix);
+	printTracebackMatrix(tbMatrix);
 
 }
 

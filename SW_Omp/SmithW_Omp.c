@@ -67,11 +67,11 @@ int main(int argc, char* argv[]) {
 	private(nEle, si, sj, ai, aj)
 	{
 		num_threads = omp_get_num_threads();
-		for (int i = 1; i <= nDiag; ++i) {
+		for (int i = 1; i <= nDiag; i++) {
 			nEle = nElement(i);
 			calcFirstDiagElement(&i, &si, &sj);
 			#pragma omp for
-			for (int j = 1; j <= nEle; ++j)
+			for (int j = 1; j <= nEle; j++)
 			{
 				ai = si - j + 1;
 				aj = sj + j - 1;
