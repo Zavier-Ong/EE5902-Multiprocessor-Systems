@@ -19,25 +19,28 @@ void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix);
 void backtrack(int* tbMatrix, int* scoreMatrix, long int* finalScore, char* queryResultReverse, char* subjectResultReverse);
 void printMatrix(int* matrix);
 void printTracebackMatrix(int* matrix);
-void printResults(long int finalScore, double time, char* qrr, char* srr);
+void printResults(long int finalScore, double time, int numThreads, char* qrr, char* srr);
 int matchMismatchScore(int i, int j);
 int max(int x, int y);
+int min(int x, int y);
 void initialize(int *scoreMatrix);
-
+long long int nElement(int i);
+void calcFirstDiagElement(int *i, int *si, int *sj);
 
 int querySize = 0;
 int subjectSize = 0;
-
 char* query, * subject;
 
 int main(int argc, char* argv[]) {
-	if (argc != 3) {
-		printf("Please enter in this format: needleW <query_file_name> <subject_file_name>\n");
+	if (argc != 4) {
+		printf("Please enter in this format: needleW <query_file_name> <subject_file_name> <num_threads>\n");
 		return 1;
 	}
 	char* queryFile = argv[1];
 	char* subjectFile = argv[2];
+	int thread_count = atoi(argv[3]);
 	readFiles(queryFile, subjectFile);
+
 
 	//increment to add in 1 row and column
 	querySize++;
@@ -49,6 +52,9 @@ int main(int argc, char* argv[]) {
 
 	//initialize variables
 	long int finalScore = 0;
+	int numThreads = 0;
+	int si, sj, ai, aj, nEle;
+	int nDiag = querySize + subjectSize - 3;
 	//temporary allocation of string
 	char* queryResultReverse = malloc(querySize*2);
 	char* subjectResultReverse = malloc(subjectSize*2);
@@ -57,19 +63,57 @@ int main(int argc, char* argv[]) {
 
 	double initialTime = omp_get_wtime();
 
-	for (int i=1; i<querySize; i++) {
-		for (int j=1; j<subjectSize; j++) {
-			similarityScore(i, j, scoreMatrix, tbMatrix);
+	#pragma omp parallel num_threads(thread_count) default(none) shared(scoreMatrix, tbMatrix, subjectSize, querySize, numThreads, nDiag) private(nEle, si, sj, ai, aj)
+	{
+		numThreads = omp_get_num_threads();
+		for (int i=1; i <= nDiag; ++i) {
+			nEle = nElement(i);
+			calcFirstDiagElement(&i, &si, &sj);
+			#pragma omp for
+			for (int j=1; j<= nEle; ++j) {
+				ai = si- j + 1;
+				aj = sj + j -1;
+				similarityScore(ai, aj, scoreMatrix, tbMatrix);
+			}
 		}
 	}
-
 	backtrack(tbMatrix, scoreMatrix, &finalScore, queryResultReverse, subjectResultReverse);
+
+
 	double finalTime = omp_get_wtime();
 	double timeElapsed = finalTime-initialTime;
-	printResults(finalScore, timeElapsed, queryResultReverse, subjectResultReverse);
+	printResults(finalScore, timeElapsed, numThreads, queryResultReverse, subjectResultReverse);
 	//printMatrix(scoreMatrix);
 	//printTracebackMatrix(tbMatrix);
 
+}
+
+long long int nElement(int i) {
+    if (i < querySize && i < subjectSize) {
+        //Number of elements in the diagonal is increasing
+        return i;
+    }
+    else if (i < max(querySize, subjectSize)) {
+        //Number of elements in the diagonal is stable
+        int val = min(querySize, subjectSize);
+        return val - 1;
+    }
+    else {
+        //Number of elements in the diagonal is decreasing
+        int val = min(querySize, subjectSize);
+        return 2 * val - i + abs(querySize - subjectSize) - 2;
+    }
+}
+
+void calcFirstDiagElement(int *i, int *si, int *sj) {
+    // Calculate the first element of diagonal
+    if (*i < subjectSize) {
+        *si = *i;
+        *sj = 1;
+    } else {
+        *si = subjectSize - 1;
+        *sj = *i - subjectSize + 2;
+    }
 }
 
 void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix) {
@@ -197,7 +241,7 @@ void printTracebackMatrix(int* matrix) {
     }
 }
 
-void printResults(long int finalScore, double time, char* qrr, char* srr) {
+void printResults(long int finalScore, double time, int numThreads, char* qrr, char* srr) {
 	//reverse both strings
 	strrev(qrr);
 	strrev(srr);
@@ -222,7 +266,8 @@ void printResults(long int finalScore, double time, char* qrr, char* srr) {
 	}
 	printf("\n\t%s\n", srr);
 	printf("4) TIME ELAPSED: %fs\n", time);
-  	printf("======================================\n");
+	printf("5) NUMBER OF THREADS USED: %d\n", numThreads);
+	printf("======================================\n");
 }
 
 int matchMismatchScore(int i, int j) {
@@ -237,6 +282,13 @@ int max(int x, int y) {
 		return x;
 	else
 		return y;
+}
+
+int min(int x, int y) {
+	if (x > y)
+		return y;
+	else
+		return x;
 }
 
 void readFiles(char* queryFile, char* subjectFile) {

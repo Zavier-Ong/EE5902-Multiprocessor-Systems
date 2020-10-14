@@ -8,17 +8,27 @@
 #define matchScore 2
 #define mismatchScore -2
 #define gapScore -5
+//Define direction constants
+#define PATH -1
+#define NONE 0
+#define UP 1
+#define LEFT 2
+#define DIAG 3
 
 void readFiles(char* queryFile, char* subjectFile);
-void similarityScore(int i, int j, int* scoreMatrix, int* maxPos);
-void backtrack(int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse);
-void printMatrix(int* matrix);
-void printResults(long int finalScore, double time, char* qrr, char* srr);
+void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix, int* maxPos);
 int matchMismatchScore(int i, int j);
+void backtrack(int* tbMatrix, int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse);
+void printMatrix(int* matrix);
+void printTracebackMatrix(int* matrix);
+void printResults(long int finalScore, double time, int num_threads, char* qrr, char* srr);
+long long int nElement(int i);
+void calcFirstDiagElement(int *i, int *si, int *sj);
+int max(int x, int y);
+int min(int x, int y);
 
 int querySize = 0;
 int subjectSize = 0;
-int num_threads = 0;
 char* query, * subject;
 
 int main(int argc, char* argv[]) {
@@ -37,9 +47,13 @@ int main(int argc, char* argv[]) {
 
 	//allocate flattened score matrix
 	int *scoreMatrix = calloc(querySize * subjectSize, sizeof(int));
+	int *tbMatrix = calloc(querySize * subjectSize, sizeof(int));
 
 	//initialize variables
 	long int finalScore = 0;
+	int num_threads = 0;
+    int si, sj, ai, aj, nEle;
+    int nDiag = querySize + subjectSize -3;
 	//temporary allocation of string
 	char* queryResultReverse = malloc(querySize*2);
 	char* subjectResultReverse = malloc(subjectSize*2);
@@ -48,31 +62,70 @@ int main(int argc, char* argv[]) {
 	//start clock
 	double initialTime = omp_get_wtime();
 
-	#pragma omp parallel num_threads(thread_count) default(none) shared(scoreMatrix, maxPosition, subjectSize, querySize, num_threads)
+	#pragma omp parallel num_threads(thread_count) \
+	default(none) shared(scoreMatrix, tbMatrix, maxPosition, subjectSize, querySize, num_threads, nDiag) \
+	private(nEle, si, sj, ai, aj)
 	{
 		num_threads = omp_get_num_threads();
-		#pragma omp for
-		for (int i=1; i<querySize; i++) {
-			for (int j=1; j<subjectSize; j++) {
-				similarityScore(i, j, scoreMatrix, &maxPosition);
+		for (int i = 1; i <= nDiag; ++i) {
+			nEle = nElement(i);
+			calcFirstDiagElement(&i, &si, &sj);
+			#pragma omp for
+			for (int j = 1; j <= nEle; ++j)
+			{
+				ai = si - j + 1;
+				aj = sj + j - 1;
+				similarityScore(ai, aj, scoreMatrix, tbMatrix, &maxPosition);
 			}
 		}
+//		for (int i=1; i<querySize; i++) {
+//			#pragma omp for
+//			for (int j=1; j<subjectSize; j++) {
+//				similarityScore(i, j, scoreMatrix, tbMatrix, &maxPosition);
+//			}
+//		}
 	}
-	backtrack(scoreMatrix, maxPosition, &finalScore, queryResultReverse, subjectResultReverse);
+	backtrack(tbMatrix, scoreMatrix, maxPosition, &finalScore, queryResultReverse, subjectResultReverse);
 
 	//stop clock
 	double finalTime = omp_get_wtime();
 	double timeElapsed = finalTime - initialTime;
-	printResults(finalScore, timeElapsed, queryResultReverse, subjectResultReverse);
-
-#ifdef DEBUG
+	printResults(finalScore, timeElapsed, num_threads, queryResultReverse, subjectResultReverse);
 	//printMatrix(scoreMatrix);
-#endif
+	//printTracebackMatrix(tbMatrix);
 
 	return 0;
 }
 
-void similarityScore(int i, int j, int* scoreMatrix, int* maxPos) {
+long long int nElement(int i) {
+    if (i < querySize && i < subjectSize) {
+        //Number of elements in the diagonal is increasing
+        return i;
+    }
+    else if (i < max(querySize, subjectSize)) {
+        //Number of elements in the diagonal is stable
+        int val = min(querySize, subjectSize);
+        return val - 1;
+    }
+    else {
+        //Number of elements in the diagonal is decreasing
+        int val = min(querySize, subjectSize);
+        return 2 * val - i + abs(querySize - subjectSize) - 2;
+    }
+}
+
+void calcFirstDiagElement(int *i, int *si, int *sj) {
+    // Calculate the first element of diagonal
+    if (*i < subjectSize) {
+        *si = *i;
+        *sj = 1;
+    } else {
+        *si = subjectSize - 1;
+        *sj = *i - subjectSize + 2;
+    }
+}
+
+void similarityScore(int i, int j, int* scoreMatrix, int* tbMatrix, int* maxPos) {
 	int up, left, diag;
 
 	int index = querySize * i + j;
@@ -87,21 +140,26 @@ void similarityScore(int i, int j, int* scoreMatrix, int* maxPos) {
 	diag = scoreMatrix[index-querySize-1] + matchMismatchScore(i, j);
 
 	//Calculates the maximum
-	int max = 0;
+	int max = NONE;
+	int pred = NONE;
 
 	if (diag > max) {
 		max = diag;
+		pred = DIAG;
 	}
 
 	if (up > max) {
 		max = up;
+		pred = UP;
 	}
 
 	if (left > max) {
 		max = left;
+		pred = LEFT;
 	}
 	//Inserts the value in the similarity and traceback matrixes
 	scoreMatrix[index] = max;
+	tbMatrix[index] = pred;
 
 	//Updates location of max value
 	if (max > scoreMatrix[*maxPos]) {
@@ -118,7 +176,7 @@ int matchMismatchScore(int i, int j) {
 		return mismatchScore;
 }
 
-void backtrack(int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse) {
+void backtrack(int* tbMatrix, int* scoreMatrix, int maxPos, long int* finalScore, char* queryResultReverse, char* subjectResultReverse) {
     int predPos;
 	int resultSize = 0;
     //record highest score
@@ -126,34 +184,34 @@ void backtrack(int* scoreMatrix, int maxPos, long int* finalScore, char* queryRe
     //backtrack from maxPos until reaches 0
     do {
 
-        if (((scoreMatrix[maxPos] - matchScore) == scoreMatrix[maxPos-querySize-1]) | ((scoreMatrix[maxPos] - mismatchScore == scoreMatrix[maxPos-querySize-1]))) { //diagonal
-            predPos = maxPos - querySize - 1;
-            //record character
-            queryResultReverse[resultSize] = query[(maxPos%querySize)-1];
-            subjectResultReverse[resultSize++] = subject[((maxPos-1)/querySize)-1];
-        }
-        else if (scoreMatrix[maxPos] - gapScore == scoreMatrix[maxPos-querySize]) { //up
-            predPos = maxPos - querySize;
-            //insert - at subject string
-            queryResultReverse[resultSize] = '-';
-            subjectResultReverse[resultSize++] = subject[((maxPos-1)/querySize)-1];
-        }
-        else if (scoreMatrix[maxPos] -gapScore == scoreMatrix[maxPos-1]) { //left
-            predPos = maxPos - 1;
-            //insert - at query string
-            queryResultReverse[resultSize] = query[(maxPos%querySize)-1];
-            subjectResultReverse[resultSize++] = '-';
-        }
+    	if (tbMatrix[maxPos] == DIAG) { //diagonal
+    		predPos = maxPos - querySize - 1;
+    		//record character
+    		queryResultReverse[resultSize] = query[(maxPos%querySize)-1];
+    		subjectResultReverse[resultSize++] = subject[((maxPos-1)/querySize)-1];
+    	}
+    	else if (tbMatrix[maxPos] == UP) { //up
+    		predPos = maxPos - querySize;
+    		//insert - at subject string
+    		queryResultReverse[resultSize] = '-';
+    		subjectResultReverse[resultSize++] = subject[((maxPos-1)/querySize)-1];
+    	}
+    	else if (tbMatrix[maxPos] == LEFT) { //left
+    		predPos = maxPos - 1;
+    		//insert - at query string
+    		queryResultReverse[resultSize] = query[(maxPos%querySize)-1];
+    		subjectResultReverse[resultSize++] = '-';
+    	}
+    	tbMatrix[maxPos] *= PATH;
+    	maxPos = predPos;
 
-        maxPos = predPos;
-
-    } while (scoreMatrix[maxPos] != 0);
+    } while (tbMatrix[maxPos] != NONE);
     //null terminating the strings
     queryResultReverse[resultSize] = '\0';
     subjectResultReverse[resultSize] = '\0';
 }
 
-void printResults(long int finalScore, double time, char* qrr, char* srr) {
+void printResults(long int finalScore, double time, int num_threads, char* qrr, char* srr) {
 	//reverse both strings
 	strrev(qrr);
 	strrev(srr);
@@ -177,7 +235,7 @@ void printResults(long int finalScore, double time, char* qrr, char* srr) {
 		}
 	}
 	printf("\n\t%s\n", srr);
-	printf("4) TIME ELAPSED: %0.3fs\n", time);
+	printf("4) TIME ELAPSED: %fs\n", time);
 	printf("5) NUMBER OF THREADS USED: %d\n", num_threads);
 	printf("======================================\n");
 }
@@ -191,7 +249,29 @@ void printMatrix(int* matrix) {
 		}
 		printf("\n");
 	}
+}
 
+void printTracebackMatrix(int* matrix) {
+	int i, j, index;
+	for (i = 0; i < querySize; i++) { //Lines
+		for (j = 0; j < subjectSize; j++) {
+			index = querySize * i + j;
+			if(matrix[index] < 0) {
+				if (matrix[index] == -UP)
+					printf("U ");
+				else if (matrix[index] == -LEFT)
+					printf("L ");
+				else if (matrix[index] == -DIAG)
+					printf("D ");
+				else
+					printf("- ");
+			}
+			else {
+				printf("- ");
+			}
+		}
+		printf("\n");
+	}
 }
 
 void readFiles(char* queryFile, char* subjectFile) {
@@ -219,5 +299,20 @@ void readFiles(char* queryFile, char* subjectFile) {
 		}
 		fclose(sfp);
 	}
+}
+
+
+int max(int x, int y) {
+	if (x > y)
+		return x;
+	else
+		return y;
+}
+
+int min(int x, int y) {
+	if (x > y)
+		return y;
+	else
+		return x;
 }
 
