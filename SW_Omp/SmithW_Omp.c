@@ -22,8 +22,8 @@ void backtrack(int* tbMatrix, int* scoreMatrix, int maxPos, long int* finalScore
 void printMatrix(int* matrix);
 void printTracebackMatrix(int* matrix);
 void printResults(long int finalScore, double time, int num_threads, char* qrr, char* srr);
-long long int nElement(int i);
-void calcFirstDiagElement(int *i, int *si, int *sj);
+int calcNumDiagRowElements(int i);
+void calcFirstDiagElement(int *i, int *start_i, int *start_j);
 int max(int x, int y);
 int min(int x, int y);
 
@@ -52,8 +52,8 @@ int main(int argc, char* argv[]) {
 	//initialize variables
 	long int finalScore = 0;
 	int num_threads = 0;
-    int si, sj, ai, aj, nEle;
-    int nDiag = querySize + subjectSize -3;
+    int start_i, start_j, diag_i, diag_j, numElements;
+    int numDiag = querySize + subjectSize -3;
 	//temporary allocation of string
 	char* queryResultReverse = malloc(querySize*2);
 	char* subjectResultReverse = malloc(subjectSize*2);
@@ -63,27 +63,21 @@ int main(int argc, char* argv[]) {
 	double initialTime = omp_get_wtime();
 
 	#pragma omp parallel num_threads(thread_count) \
-	default(none) shared(scoreMatrix, tbMatrix, maxPosition, subjectSize, querySize, num_threads, nDiag) \
-	private(nEle, si, sj, ai, aj)
+	default(none) shared(scoreMatrix, tbMatrix, maxPosition, subjectSize, querySize, num_threads, numDiag) \
+	private(numElements, start_i, start_j, diag_i, diag_j)
 	{
 		num_threads = omp_get_num_threads();
-		for (int i = 1; i <= nDiag; i++) {
-			nEle = nElement(i);
-			calcFirstDiagElement(&i, &si, &sj);
+		for (int i = 1; i <= numDiag; i++) {
+			numElements = calcNumDiagRowElements(i);
+			calcFirstDiagElement(&i, &start_i, &start_j);
 			#pragma omp for
-			for (int j = 1; j <= nEle; j++)
+			for (int j = 1; j <= numElements; j++)
 			{
-				ai = si - j + 1;
-				aj = sj + j - 1;
-				similarityScore(ai, aj, scoreMatrix, tbMatrix, &maxPosition);
+				diag_i = start_i - j + 1;
+				diag_j = start_j + j - 1;
+				similarityScore(diag_i, diag_j, scoreMatrix, tbMatrix, &maxPosition);
 			}
 		}
-//		for (int i=1; i<querySize; i++) {
-//			#pragma omp for
-//			for (int j=1; j<subjectSize; j++) {
-//				similarityScore(i, j, scoreMatrix, tbMatrix, &maxPosition);
-//			}
-//		}
 	}
 	backtrack(tbMatrix, scoreMatrix, maxPosition, &finalScore, queryResultReverse, subjectResultReverse);
 
@@ -97,31 +91,31 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-long long int nElement(int i) {
+int calcNumDiagRowElements(int i) {
     if (i < querySize && i < subjectSize) {
         //Number of elements in the diagonal is increasing
         return i;
     }
     else if (i < max(querySize, subjectSize)) {
         //Number of elements in the diagonal is stable
-        int val = min(querySize, subjectSize);
-        return val - 1;
+        int size = min(querySize, subjectSize);
+        return size - 1;
     }
     else {
         //Number of elements in the diagonal is decreasing
-        int val = min(querySize, subjectSize);
-        return 2 * val - i + abs(querySize - subjectSize) - 2;
+        int size = min(querySize, subjectSize);
+        return 2 * size - i + abs(querySize - subjectSize) - 2;
     }
 }
 
-void calcFirstDiagElement(int *i, int *si, int *sj) {
+void calcFirstDiagElement(int *i, int *start_i, int *start_j) {
     // Calculate the first element of diagonal
-    if (*i < subjectSize) {
-        *si = *i;
-        *sj = 1;
+    if (*i < querySize) {
+        *start_i = *i;
+        *start_j = 1;
     } else {
-        *si = subjectSize - 1;
-        *sj = *i - subjectSize + 2;
+        *start_i = querySize - 1;
+        *start_j = *i - querySize + 2;
     }
 }
 

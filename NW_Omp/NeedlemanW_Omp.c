@@ -24,8 +24,8 @@ int matchMismatchScore(int i, int j);
 int max(int x, int y);
 int min(int x, int y);
 void initialize(int *scoreMatrix);
-long long int nElement(int i);
-void calcFirstDiagElement(int *i, int *si, int *sj);
+int calcNumDiagRowElements(int i);
+void calcFirstDiagElement(int *i, int *start_i, int *start_j);
 
 int querySize = 0;
 int subjectSize = 0;
@@ -53,8 +53,8 @@ int main(int argc, char* argv[]) {
 	//initialize variables
 	long int finalScore = 0;
 	int numThreads = 0;
-	int si, sj, ai, aj, nEle;
-	int nDiag = querySize + subjectSize - 3;
+	int start_i, start_j, diag_i, diag_j, numElements;
+	int numDiag = querySize + subjectSize - 3;
 	//temporary allocation of string
 	char* queryResultReverse = malloc(querySize*2);
 	char* subjectResultReverse = malloc(subjectSize*2);
@@ -63,17 +63,19 @@ int main(int argc, char* argv[]) {
 
 	double initialTime = omp_get_wtime();
 
-	#pragma omp parallel num_threads(thread_count) default(none) shared(scoreMatrix, tbMatrix, subjectSize, querySize, numThreads, nDiag) private(nEle, si, sj, ai, aj)
+	#pragma omp parallel num_threads(thread_count) \
+	default(none) shared(scoreMatrix, tbMatrix, subjectSize, querySize, numThreads, numDiag) \
+	private(numElements, start_i, start_j, diag_i, diag_j)
 	{
 		numThreads = omp_get_num_threads();
-		for (int i=1; i <= nDiag; i++) {
-			nEle = nElement(i);
-			calcFirstDiagElement(&i, &si, &sj);
+		for (int i=1; i <= numDiag; i++) {
+			numElements = calcNumDiagRowElements(i);
+			calcFirstDiagElement(&i, &start_i, &start_j);
 			#pragma omp for
-			for (int j=1; j<= nEle; j++) {
-				ai = si- j + 1;
-				aj = sj + j -1;
-				similarityScore(ai, aj, scoreMatrix, tbMatrix);
+			for (int j=1; j<= numElements; j++) {
+				diag_i = start_i- j + 1;
+				diag_j = start_j + j -1;
+				similarityScore(diag_i, diag_j, scoreMatrix, tbMatrix);
 			}
 		}
 	}
@@ -83,36 +85,36 @@ int main(int argc, char* argv[]) {
 	double finalTime = omp_get_wtime();
 	double timeElapsed = finalTime-initialTime;
 	printResults(finalScore, timeElapsed, numThreads, queryResultReverse, subjectResultReverse);
-	printMatrix(scoreMatrix);
-	printTracebackMatrix(tbMatrix);
+	//printMatrix(scoreMatrix);
+	//printTracebackMatrix(tbMatrix);
 
 }
 
-long long int nElement(int i) {
+int calcNumDiagRowElements(int i) {
     if (i < querySize && i < subjectSize) {
         //Number of elements in the diagonal is increasing
         return i;
     }
     else if (i < max(querySize, subjectSize)) {
         //Number of elements in the diagonal is stable
-        int val = min(querySize, subjectSize);
-        return val - 1;
+        int size = min(querySize, subjectSize);
+        return size - 1;
     }
     else {
         //Number of elements in the diagonal is decreasing
-        int val = min(querySize, subjectSize);
-        return 2 * val - i + abs(querySize - subjectSize) - 2;
+        int size = min(querySize, subjectSize);
+        return 2 * size - i + abs(querySize - subjectSize) - 2;
     }
 }
 
-void calcFirstDiagElement(int *i, int *si, int *sj) {
+void calcFirstDiagElement(int *i, int *start_i, int *start_j) {
     // Calculate the first element of diagonal
-    if (*i < subjectSize) {
-        *si = *i;
-        *sj = 1;
+    if (*i < querySize) {
+        *start_i = *i;
+        *start_j = 1;
     } else {
-        *si = subjectSize - 1;
-        *sj = *i - subjectSize + 2;
+        *start_i = querySize - 1;
+        *start_j = *i - querySize + 2;
     }
 }
 
